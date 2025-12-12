@@ -46,6 +46,8 @@ src/
       authController.ts
     logistics/
       authController.ts
+      DriverController.ts
+      shipment.ts
     user/
       authController.ts
       shipment.ts
@@ -73,6 +75,7 @@ src/
   utils/
     envConfig.ts
   index.ts
+endpoints.md
 package.json
 tsconfig.json
 types.d.ts
@@ -294,6 +297,258 @@ export async function LogisticRegister(req: Request, res: Response){
 }
 </file>
 
+<file path="src/controllers/logistics/DriverController.ts">
+import { Request, Response } from "express";
+import nodemailer from "nodemailer";
+import crypto from "crypto";
+import bcrypt from "bcrypt";
+
+import User from "../../models/userModel";
+import { DriverDetails } from "../../models/detailsModel";
+import { LogisticDetails } from "../../models/detailsModel";
+import { config } from "../../utils/envConfig";
+
+export async function addDriver(req: Request, res: Response) {
+    try {
+        const {
+            logisticClientId,
+            name,
+            email,
+            contactNumber,
+            licenseNumber,
+            vehicleNumber,
+            chasisNo
+        } = req.body;
+
+        if (!logisticClientId ||
+            !name ||
+            !email ||
+            !contactNumber ||
+            !licenseNumber ||
+            !vehicleNumber ||
+            !chasisNo) {
+            console.log("All fields are required!");
+            return res.status(400).json({ message: "All fields are required!" });
+        }
+
+        const client = await LogisticDetails.findOne({userId:logisticClientId});
+        if (!client) {
+            console.log("Logistic client not found!");
+            return res.status(404).json({ message: "Logistic client not found!" });
+        }
+
+        const existingDriver = await DriverDetails.findOne({
+            $or: [
+                { email },
+                { contactNumber },
+                { licenseNumber },
+                { vehicleNumber },
+                { chasisNo }
+            ]
+        });
+
+        const existingDriverUser = await User.findOne({ email: email });
+        if (existingDriver || existingDriverUser) {
+            console.log("Driver with provided details already exists!");
+            return res.status(409).json({ message: "Driver with provided details already exists!" });
+        }
+
+        const saltRound = 10;
+        const tempPassword = crypto.randomBytes(6).toString('hex');
+        const pwdhash = await bcrypt.hash(tempPassword, saltRound);
+
+        const newUser = new User({
+            name,
+            email,
+            pwdhash,
+            role: "driver"
+        });
+
+        const id = newUser._id;
+        
+        await newUser.save();
+
+        const newDriver = new DriverDetails({
+            userId: id,
+            logisticClientId,
+            name,
+            email,
+            contactNumber,
+            licenseNumber,
+            vehicleNumber,
+            chasisNo
+        });
+
+        await newDriver.save();
+
+        const transporter = nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+                user: config.EMAIL_ID,
+                pass: config.GMAIL_API
+            }
+        })
+
+        const mailOptions = {
+        from: config.EMAIL_ID,
+        to: email,
+        subject: "FastFare Driver Account Created",
+        html: `
+            <p>Your driver account has been created.</p>
+            <p>Email: <strong>${email}</strong></p>
+            <p>Temporary Password: <strong>${tempPassword}</strong></p>
+        `
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log(`Email sent to ${email} successfully!`);
+
+        console.log("Driver added successfully!");
+        return res.status(201).json({ message: "Driver added successfully!", driver: newDriver });
+    } catch (error) {
+        console.log("Error: Internal Server Error!", error);
+        return res.status(500).json({ message: "Internal Server Error!" });
+    }
+}
+
+export async function getDrivers(req: Request, res: Response) {
+    try {
+        const drivers = await DriverDetails.find({ logisticClientId: req.user?._id });
+        console.log("Drivers fetched successfully!");
+        return res.status(200).json({ message: "Drivers fetched successfully!", drivers });
+    } catch (error) {
+        console.log("Error: Internal Server Error!", error);
+        return res.status(500).json({ message: "Internal Server Error!" });
+    }
+}
+</file>
+
+<file path="src/controllers/logistics/shipment.ts">
+import { Request, Response } from "express";
+import { DriverDetails } from "../../models/detailsModel";
+import { Shipment } from "../../models/shipmentModel";
+
+
+export async function confirmShipment(req: Request, res: Response) {
+    try {
+        const authUser = req.user;
+        const { driverId, shipmentId} = req.body;
+        const logisticClientId = authUser?._id;
+
+        if( !driverId || !shipmentId){
+            console.log("Driver ID and status are required!");
+            return res.status(400).json({ message: "Driver ID and status are required!" });
+        }
+
+        const driver = await DriverDetails.findOne({ userId: driverId, logisticClientId });
+        if (!driver) {
+            console.log("Driver not found!");
+            return res.status(404).json({ message: "Driver not found!" });
+        }
+        const shipment = await Shipment.findOne({ shipmentId: shipmentId });
+        console.log(shipment);
+        console.log(shipmentId);
+        if (!shipment) {
+            console.log("Shipment not found!");
+            return res.status(404).json({ message: "Shipment not found!" });
+        }
+
+        shipment.status = "confirmed";
+        shipment.DriverId = driver.userId;
+        shipment.logisticClientId = logisticClientId;
+        if(driver.status !== "on-duty")
+        {
+            driver.status = "on-duty";
+        }
+        driver.currentOrders += 1;
+
+        await shipment.save();
+        await driver.save();
+
+        console.log("Shipment status updated successfully!");
+        return res.status(200).json({ message: "Shipment status updated successfully!", shipment });
+    } catch (error){
+        console.log("Error: Internal Server Error!", error);
+        return res.status(500).json({ message: "Internal Server Error!" });
+    }
+}
+
+
+export async function scanShipment(req: Request, res: Response) {
+    try{
+        const { qrToken } = req.body;
+        const authUser = req.user;
+        if(!authUser){
+            console.log("Unauthorized Access!");
+            return res.status(401).json({ message: "Unauthorized Access!" });
+        }
+
+        const params = new URLSearchParams(qrToken);
+        const shipmentId = params.get("sid");
+        const Token = params.get("token");
+        const driverId = authUser._id;
+        if(!Token || !shipmentId){
+            console.log("All fields are required!");
+            return res.status(400).json({ message: "All fields are required!" });
+        }
+
+        const shipment = await Shipment.findOne({shipmentId: shipmentId,DriverId: driverId,})
+        const driver = await DriverDetails.findOne({ userId: driverId });
+
+        if(!driver){
+            console.log("Driver not found!");
+            return res.status(404).json({ message: "Driver not found!" });
+        }
+
+        if(!shipment){
+            console.log("Shipment not found!");
+            return res.status(404).json({ message: "Shipment not found!" });
+        }
+        
+        if(Token !== shipment.pickupQrToken && Token !== shipment.deliveryQrToken){
+            console.log("Token Missmatch!");
+            return res.status(409).json({ message: "Token Missmatch!" });
+        }
+
+        if(Token.startsWith("DEL-")){
+            if(shipment.status !== "in-transit"){
+                console.log("Shipment not in transit!");
+                return res.status(400).json({ message: "Shipment not in transit!" });
+            }
+            
+            driver.currentOrders -= 1;
+            if(driver.currentOrders === 0){
+                driver.status = "available";
+            }
+            await driver.save();
+            shipment.status = "delivered";
+        }else if(Token.startsWith("PCK-")){
+            if(shipment.status !== "confirmed"){
+                console.log("Shipment not confirmed!");
+                return res.status(400).json({ message: "Shipment not confirmed!" });
+            }
+            shipment.status = "in-transit";
+        }else{
+            console.log("Invalid QR Token!");
+            return res.status(400).json({ message: "Invalid QR Token!" });
+        }
+
+        await shipment.save();
+        console.log("Shipment scanned successfully!");
+        return res.status(200).json({
+            message: "Shipment scanned successfully!",
+            shipment
+        });
+    }catch(error){
+        console.log("Error:Internal Server Error!", error)
+        return res.status(500).json({
+            message:"Internal Server Error!",
+            error
+        })
+    }
+}
+</file>
+
 <file path="src/controllers/user/authController.ts">
 import { Request, Response } from "express"
 import bcrypt from "bcrypt"
@@ -414,8 +669,27 @@ export async function UpdateUser(req:Request, res:Response){
 
 <file path="src/controllers/user/shipment.ts">
 import { Request, Response } from "express";
-import { nanoid } from "nanoid";
+import crypto from "crypto";
+import nodemailer from "nodemailer";
+import QRCode from "qrcode";
 import { Shipment } from "../../models/shipmentModel";
+import { config } from "../../utils/envConfig";
+
+function generateQrPayload(
+    shipmentId: string,
+    qrToken: string
+): string{
+    return `sid=${shipmentId}&token=${qrToken}`;
+}
+
+async function createQrBuffer(payload: string): Promise<Buffer> {
+  return QRCode.toBuffer(payload, {
+    type: "png",
+    errorCorrectionLevel: "M",
+    margin: 2,
+    scale: 5,
+  });
+}
 
 export async function BookShipments(req: Request, res: Response) {
     try{
@@ -423,11 +697,17 @@ export async function BookShipments(req: Request, res: Response) {
         const {
             pickupLocation: {
                 longitude: pickupLongitude,
-                latitude: pickupLatitude
+                latitude: pickupLatitude,
+                email: pickupEmail,
+                address: address,
+                contactNumber: contactNumber
             },
             deliveryLocation: {
                 longitude: deliveryLongitude,
-                latitude: deliveryLatitude
+                latitude: deliveryLatitude,
+                email: deliveryEmail,
+                address: deliveryAddress,
+                contactNumber: deliveryContactNumber
             },
             size: {
                 length,
@@ -440,32 +720,45 @@ export async function BookShipments(req: Request, res: Response) {
             price
         } = req.body;
 
-        if (!pickupLongitude ||
-            !pickupLatitude || 
-            !deliveryLongitude || 
-            !deliveryLatitude || 
-            !length || 
-            !width || 
-            !height || 
-            !quantity || 
-            !weight || 
-            !netWeight || 
-            !price) {
+        if (
+            pickupLongitude == null ||
+            pickupLatitude == null ||
+            deliveryLongitude == null ||
+            deliveryLatitude == null ||
+            length == null ||
+            width == null ||
+            height == null ||
+            quantity == null ||
+            weight == null ||
+            netWeight == null ||
+            price == null
+            ) {
             console.log("All fields are required!");
             return res.status(400).json({ message: "All fields are required!" });
         }
 
-        const shipmentId = `FFR+${nanoid(5)}`;
+        const pickupQrToken = `PCK-${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
+        const deliveryQrToken = `DEL-${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
+        const shipmentId = `FFR-${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
+        
         const newShipment = new Shipment({
             shipmentId,
+            pickupQrToken,
+            deliveryQrToken,
             userId: user?._id,
-            pickupLocation: {
+            pickupDetails: {
                 longitude: pickupLongitude,
-                latitude: pickupLatitude
+                latitude: pickupLatitude,
+                email: pickupEmail,
+                address: address,
+                contactNumber: contactNumber
             },
-            deliveryLocation: {
+            deliveryDetails: {
                 longitude: deliveryLongitude,
-                latitude: deliveryLatitude
+                latitude: deliveryLatitude,
+                email: deliveryEmail,
+                address: deliveryAddress,
+                contactNumber: deliveryContactNumber
             },
             size: {
                 length,
@@ -476,9 +769,73 @@ export async function BookShipments(req: Request, res: Response) {
             weight,
             netWeight,
             price,
-            status: "booked"
+            status: "pending"
         })
         await newShipment.save();
+
+        const qrPayloadpck = generateQrPayload(shipmentId, pickupQrToken);
+        const qrbufferpck = await createQrBuffer(qrPayloadpck);
+        const qrPayloaddel = generateQrPayload(shipmentId, deliveryQrToken);
+        const qrbufferdel = await createQrBuffer(qrPayloaddel);
+        console.log(qrbufferdel)
+
+        const htmlpck = `
+            <div style="font-family: sans-serif; text-align: center;">
+                <h2>Shipment Pickup QR Code</h2>
+                <p>Scan this QR code at the pickup point for shipment <strong>${shipmentId}</strong>.</p>
+                <img src="cid:pickupqr@fastfare" alt="Pickup QR" style="max-width: 220px; border: 1px solid #ccc; padding: 4px;" />
+            </div>
+            `;
+
+            const htmldel = `
+            <div style="font-family: sans-serif; text-align: center;">
+                <h2>Shipment Delivery QR Code</h2>
+                <p>Scan this QR code at the delivery point for shipment <strong>${shipmentId}</strong>.</p>
+                <img src="cid:deliveryqr@fastfare" alt="Delivery QR" style="max-width: 220px; border: 1px solid #ccc; padding: 4px;" />
+            </div>
+            `;
+
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: config.EMAIL_ID,
+                pass: config.GMAIL_API
+            }
+        })
+
+        const mailOptionsPCK = {
+            from: config.EMAIL_ID,
+            to: pickupEmail,
+            subject: "Shipment Booking Confirmation - FastFare (Pickup QR)",
+            html: htmlpck,
+            attachments: [
+                {
+                filename: "pickup-qr.png",
+                content: qrbufferpck,
+                cid: "pickupqr@fastfare", // must match the cid in <img src="cid:...">
+                },
+            ],
+            };
+
+            const mailOptionsDEL = {
+            from: config.EMAIL_ID,
+            to: deliveryEmail,
+            subject: "Shipment Booking Confirmation - FastFare (Delivery QR)",
+            html: htmldel,
+            attachments: [
+                {
+                filename: "delivery-qr.png",
+                content: qrbufferdel,
+                cid: "deliveryqr@fastfare",
+                },
+            ],
+            };
+
+        await transporter.sendMail(mailOptionsPCK);
+        await transporter.sendMail(mailOptionsDEL);
+
+        console.log(`Email sent to ${pickupEmail} and ${deliveryEmail} successfully!`);
+        
         console.log("Shipment booked successfully!");
         return res.status(201).json({
             message: "Shipment booked successfully!",
@@ -530,6 +887,7 @@ import { sign, verify } from "jsonwebtoken";
 
 import { config } from "../utils/envConfig"
 import User from "../models/userModel";
+import { UserDetails, AdminDetails, LogisticDetails } from "../models/detailsModel";
 
 const JWT_SECRET = config.JWT_SECRET;
 
@@ -557,10 +915,7 @@ export async function Login(req:Request, res:Response){
             return res.status(401).json({message:"Invalid Email or Password!"})
         }
 
-        const token = sign({email:user.email, role:user.role, id:user._id},JWT_SECRET,{expiresIn: "1h"})
-        if(verify(token, JWT_SECRET))
-            console.log("Token Verified Successfully")
-
+        const token = sign({id:user._id, email:user.email, role:user.role},JWT_SECRET,{expiresIn: "1h"})
         console.log("User Logged In Successfully!")
         return res.status(200).json({
             message:"User Logged In Successfully!",
@@ -571,6 +926,51 @@ export async function Login(req:Request, res:Response){
         return res.status(500).json({
             message:"Internal Server Error!",
             error
+        })
+    }
+}
+
+export async function fetchUserDetail(req: Request, res: Response){
+    try{
+        if (!req.user) {
+            return res.status(401).json({ message: "Unauthorized!" });
+        }
+        const data = req.user as any;
+
+        const Role = data.role;
+        console.log("Fetching details for user:", data.id, "with role:", Role);
+        const user = await User.findById(data.id).select("-pwdhash -__v")
+        if(!user){
+            console.log("User Not Found!") 
+            return res.status(404).json({
+                message:"User Not Found!"
+            })
+        }
+        
+        var details: any = null;
+        if(Role == "admin"){
+            details = await AdminDetails.findOne({userId: user._id}).select("-__v -userId");
+        }else if(Role == "logistic"){
+            details = await LogisticDetails.findOne({userId: user._id}).select("-__v -userId");
+        }else if (Role == "user"){
+            details = await UserDetails.findOne({userId: user._id}).select("-__v -userId");
+        }else{
+            console.log("Invalid User Role!")
+            return res.status(400).json({
+                message:"Invalid User Role!"
+            })
+        }
+
+        console.log("User Details Fetched Successfully!")
+        return res.status(200).json({
+            message:"User Details Fetched Successfully!",
+            user:user,
+            details:details
+        })
+    }catch(error){
+        console.log("Error:Internal Server Error!", error)
+        return res.status(500).json({
+            message:"Internal Server Error!"
         })
     }
 }
@@ -708,19 +1108,6 @@ const logisticDetailsSchema = new mongoose.Schema({
     address: {
         type: String
     },
-
-    drivers: [{
-        name: {
-            type: String
-        },
-        licenseNumber: {
-            type: String,
-            unique: true
-        },
-        contactNumber: {
-            type: Number
-        }
-    }],
     createdAt: {
         type: Date,
         default: Date.now
@@ -753,14 +1140,73 @@ const adminDetailsSchema = new mongoose.Schema({
 
 const AdminDetails = mongoose.model("ADMIN_DETAILS", adminDetailsSchema)
 
+const driverDetailsSchema = new mongoose.Schema({
+    userId:{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "USER",
+        required: true,
+        unique: true
+    },
+    logisticClientId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "LOGISTIC_DETAILS",
+        required: true,
+    },
+    name: {
+        type: String,
+        required: true
+    },
+    email: {
+        type: String,
+        required: true,
+        unique: true
+    },
+    contactNumber: {
+        type: Number,
+        required: true,
+        unique: true
+    },
+    licenseNumber: {
+        type: String,
+        required: true,
+        unique: true
+    },
+    vehicleNumber: {
+        type: String,
+        required: true,
+        unique: true
+    },
+    chasisNo: {
+        type: String,
+        required: true,
+        unique: true
+    },
+    status: {
+        type: String,
+        enum: ["available", "unavailable", "on-duty"],
+        default: "available"
+    },
+    currentOrders:{
+        type: Number,
+        default: 0
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+})
+
+const DriverDetails = mongoose.model("DRIVER_DETAILS", driverDetailsSchema)
 export {
     UserDetails,
     LogisticDetails,
-    AdminDetails
+    AdminDetails,
+    DriverDetails
 }
 </file>
 
 <file path="src/models/shipmentModel.ts">
+import e from "express"
 import mongoose from "mongoose"
 
 const shipmentSchema = new mongoose.Schema({
@@ -769,28 +1215,69 @@ const shipmentSchema = new mongoose.Schema({
         ref: "USER",
         required: true
     },
+    logisticClientId:{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "LOGISTIC_DETAILS",
+    },
+    DriverId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "DRIVER_DETAILS",
+    },
     shipmentId:{
         type: String,
         required: true,
-        unique: true,
-        
+        unique: true,  
     },
-    pickupLocation:{
+    pickupQrToken:{
+        type: String,
+        required: true,
+        unique: true,
+    },
+    deliveryQrToken:{
+        type: String,
+        required: true,
+        unique: true,
+    },
+    pickupDetails:{
         longitude:{
             type: Number,
             required: true
         },
         latitude:{
+            type: Number,
+            required: true
+        },
+        email:{
+            type: String,
+            required: true
+        },
+        address:{
+            type: String,
+            required: true
+        },
+        contactNumber:{
             type: Number,
             required: true
         }
     },
-    deliveryLocation:{
+    deliveryDetails:{
         longitude:{
             type: Number,
             required: true
         },
         latitude:{
+            type: Number,
+            required: true
+        },
+        email:{
+            type: String,
+            required: true
+        },
+        address:{
+            type: String,
+            required: true
+        },
+        contactNumber:{
             type: Number,
             required: true
         }
@@ -823,7 +1310,7 @@ const shipmentSchema = new mongoose.Schema({
     },
     status:{
         type: String,
-        enum: ["pending", "booked", "in-transit", "delivered", "cancelled"],
+        enum: ["confirmed", "rejected", "pending", "in-transit", "delivered", "cancelled"],
         default: "pending"
     },
     price:{
@@ -836,7 +1323,7 @@ const shipmentSchema = new mongoose.Schema({
     }
 })
 
-const Shipment = mongoose.model("SHIPMENT", shipmentSchema)
+const Shipment = mongoose.model("SHIPMENTS", shipmentSchema)
 export { Shipment }
 </file>
 
@@ -862,7 +1349,7 @@ const userSchema = new mongoose.Schema({
     role:{
         type:String,
         required:true,
-        enum:["user","admin","logistic"],
+        enum:["user","admin","logistic","driver"],
         default:"user"
     },
     createdAt:{
@@ -896,11 +1383,17 @@ import { Router } from "express"
 import { Authenticate } from "../../middlewares/authenticationMiddleware"
 import { Authorize } from "../../middlewares/authorizationMiddleware"
 import { LogisticRegister, UpdateUser } from "../../controllers/logistics/authController"
+import { addDriver, getDrivers } from "../../controllers/logistics/DriverController"
+import { confirmShipment, scanShipment } from "../../controllers/logistics/shipment"
 
 const router = Router()
 
 router.post('/register', LogisticRegister)
 router.patch('/update/:id', Authenticate, Authorize(["logistic"]), UpdateUser)
+router.post('/driver/add', Authenticate, Authorize(["logistic"]), addDriver)
+router.get('/driver/getall', Authenticate, Authorize(["logistic"]), getDrivers)
+router.post('/shipment/confirm', Authenticate, Authorize(["logistic"]), confirmShipment)
+router.post('/shipment/scan', Authenticate, Authorize(["driver"]), scanShipment)
 
 export default router
 </file>
@@ -942,14 +1435,18 @@ import adminRoutes from "./admin/authRoute"
 import logisticRoutes from "./logistics/authRoute"
 import shipment from "./user/shipmentRoute"
 import { Login }  from "../controllers/authController"
+import { fetchUserDetail } from "../controllers/authController"
+import { Authenticate } from "../middlewares/authenticationMiddleware"
+import { Authorize } from "../middlewares/authorizationMiddleware"
 const  router = Router()
 
-router.use('/login', Login)
 router.use('/user', userRoutes)
 router.use('/admin', adminRoutes)
 router.use('/logistic', logisticRoutes)
 router.use('/user', shipment)
 
+router.use('/login', Login)
+router.use('/fetchdetail', Authenticate, Authorize(["user", "admin", "logistic"]), fetchUserDetail)
 export default router;
 </file>
 
@@ -1008,6 +1505,8 @@ export const config = {
   MONGO_URI: process.env.MONGO_URI,
   JWT_SECRET: process.env.JWT_SECRET || 'asldkjfasljkf3983433',
   GSTIN_VERIFY_API_KEY: process.env.GSTIN_VERIFY_API_KEY,
+  GMAIL_API: process.env.GMAIL_API || '',
+  EMAIL_ID: process.env.EMAIL_ID || '',
 };
 </file>
 
@@ -1065,6 +1564,7 @@ app.listen(PORT, ()=>{
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "crypto": "^1.0.1",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "helmet": "^8.1.0",
@@ -1073,12 +1573,16 @@ app.listen(PORT, ()=>{
     "mongoose": "^8.19.1",
     "morgan": "^1.10.1",
     "nanoid": "^5.1.6",
+    "nodemailer": "^7.0.11",
+    "qrcode": "^1.5.4",
     "typescript": "^5.9.3"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
     "@types/cookie-parser": "^1.4.9",
-    "@types/morgan": "^1.9.10"
+    "@types/morgan": "^1.9.10",
+    "@types/nodemailer": "^7.0.4",
+    "@types/qrcode": "^1.5.6"
   }
 }
 </file>
