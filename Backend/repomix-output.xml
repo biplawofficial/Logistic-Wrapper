@@ -1,0 +1,1215 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+src/
+  controllers/
+    admin/
+      authController.ts
+    logistics/
+      authController.ts
+    user/
+      authController.ts
+      shipment.ts
+    authController.ts
+  db/
+    dbConnect.ts
+  middlewares/
+    authenticationMiddleware.ts
+    authorizationMiddleware.ts
+  models/
+    detailsModel.ts
+    shipmentModel.ts
+    userModel.ts
+  routes/
+    admin/
+      authRoute.ts
+    logistics/
+      authRoute.ts
+    user/
+      authRoute.ts
+      shipmentRoute.ts
+    connector.ts
+  services/
+    gstinService.ts
+  utils/
+    envConfig.ts
+  index.ts
+package.json
+tsconfig.json
+types.d.ts
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/controllers/admin/authController.ts">
+import { Request, Response } from "express"
+import bcrypt from "bcrypt"
+
+import User from "../../models/userModel"
+import { AdminDetails } from "../../models/detailsModel"
+
+interface Iregister {
+    name:string,
+    email:string,
+    password:string
+}
+
+interface Iupdate {
+    name?:string,
+    contactNumber?:string,
+    age?:number,
+}
+
+export async function UpdateUser(req:Request, res:Response){
+    try{
+        const userId = req.params.id
+        const data: Iupdate = req.body
+
+        const userExists = await User.findById(userId)
+        if(!userExists){
+            console.log("User Not Found!") 
+            return res.status(404).json({
+                message:"User Not Found!"
+            })
+        }   
+        if(userExists.role !== "admin"){
+            console.log("This endpoint is only for users with role 'admin'.")
+            return res.status(403).json({
+                message:"This endpoint is only for users with role 'admin'."
+            })
+        }
+
+        const user = await AdminDetails.findOneAndUpdate(
+            { userId: userId },
+            {$set: data},
+            {new:true, runValidators:true, upsert:true}
+        )
+
+        console.log("User Details Updated Successfully!")
+        return res.status(200).json({
+            message:"User Details Updated Successfully!",
+            user:user
+        })
+
+    }catch(error){
+        console.log(error)
+        return res.status(500).json({
+            message:"Internal Server Error!",
+            error
+        })
+    }
+}
+
+export async function AdminRegister(req: Request, res: Response){
+    try{
+        const {name, email, password}: Iregister = req.body
+        if(!name || !email || !password){
+            console.log("All fields are Required!")
+            return res.status(400).json({ message: "All fields are required!" });
+        }
+
+        const user = await User.findOne({email:email})
+        if(user){
+            console.log("Error:User already exists!")
+            return res.status(409).json({message:"User already exists with this email!"})
+        }
+
+        const saltRound = 10
+        const pwdhash = await bcrypt.hash(password, saltRound)
+        const newUser = new User({
+            name,
+            email,
+            pwdhash,
+            role: "admin"
+        })
+        await newUser.save()
+        const response = {
+            _id: newUser._id,
+            name: newUser.name,
+            email: newUser.email,
+            role: newUser.role,
+            createdAt: newUser.createdAt
+        }
+        console.log("User Registered Successfully!")
+        return res.status(201).json({
+            message:"User Registered Successfully!",
+            response
+        })
+   
+    }catch(error){
+        console.log("Error:Internal Server Error!", error)
+        return res.status(500).json({
+            message:"Internal Server Error!",
+            error
+        })
+    }
+}
+</file>
+
+<file path="src/controllers/logistics/authController.ts">
+import { Request, Response } from "express"
+import bcrypt from "bcrypt"
+
+import User from "../../models/userModel"
+import { LogisticDetails,  } from "../../models/detailsModel"
+
+
+interface Iregister {
+    name:string,
+    email:string,
+    password:string
+}
+
+interface Iupdate {
+    name?: string;
+    companyName?: string;
+    gstin?: string;
+    address?: string;
+}
+
+export async function UpdateUser(req:Request, res:Response){
+    try{
+        const userId = req.params.id
+        const data: Iupdate = req.body
+        
+        const userExists = await User.findById(userId)
+        if(!userExists){
+            console.log("User Not Found!") 
+            return res.status(404).json({
+                message:"User Not Found!"
+            })
+        }   
+        if(userExists.role !== "logistic"){
+            console.log("This endpoint is only for users with role 'logistic'.")
+            return res.status(403).json({
+                message:"This endpoint is only for users with role 'logistic'."
+            })
+        }
+
+        const user = await LogisticDetails.findOneAndUpdate(
+            { userId: userId },
+            {$set: data},
+            {new:true, runValidators:true, upsert:true}
+        )
+
+        console.log("User Details Updated Successfully!",user)
+        return res.status(200).json({
+            message:"User Details Updated Successfully!",
+            user:user
+        })
+
+    }catch(error){
+        console.log(error)
+        return res.status(500).json({
+            message:"Internal Server Error!",
+            error
+        })
+    }
+}
+
+
+export async function LogisticRegister(req: Request, res: Response){
+    try{
+        const {name, email, password}: Iregister = req.body
+        if(!name || !email || !password){
+            console.log("All fields are Required!")
+            return res.status(400).json({ message: "All fields are required!" });
+        }
+
+        const user = await User.findOne({email:email})
+        if(user){
+            console.log("Error:User already exists!")
+            return res.status(409).json({message:"User already exists with this email!"})
+        }
+
+        const saltRound = 10
+        const pwdhash = await bcrypt.hash(password, saltRound)
+        const newUser = new User({
+            name,
+            email,
+            pwdhash,
+            role: "logistic"
+        })
+        await newUser.save()
+        const response = {
+            _id: newUser._id,
+            name: newUser.name,
+            email: newUser.email,
+            role: newUser.role,
+            createdAt: newUser.createdAt
+        }
+        console.log("User Registered Successfully!")
+        return res.status(201).json({
+            message:"User Registered Successfully!",
+            response
+        })
+   
+    }catch(error){
+        console.log("Error:Internal Server Error!", error)
+        return res.status(500).json({
+            message:"Internal Server Error!",
+            error
+        })
+    }
+}
+</file>
+
+<file path="src/controllers/user/authController.ts">
+import { Request, Response } from "express"
+import bcrypt from "bcrypt"
+
+import User from "../../models/userModel"
+import { UserDetails,  } from "../../models/detailsModel"
+import { verifyGstin } from "../../services/gstinService"
+
+interface Iregister {
+    name:string,
+    email:string,
+    password:string
+}
+export async function UserRegister(req:Request,res:Response){
+    try{
+        const {name, email, password}: Iregister = req.body
+        if(!name || !email || !password){
+            console.log("All fields are Required!")
+            return res.status(400).json({ message: "All fields are required!" });
+        }
+
+        const user = await User.findOne({email:email})
+        if(user){
+            console.log("Error:User already exists!")
+            return res.status(409).json({message:"User already exists with this email!"})
+        }
+
+        const saltRound = 10
+        const pwdhash = await bcrypt.hash(password, saltRound)
+        const newUser = new User({
+            name,
+            email,
+            pwdhash
+        })
+        await newUser.save()
+        const response = {
+            _id: newUser._id,
+            name: newUser.name,
+            email: newUser.email,
+            role: newUser.role,
+            createdAt: newUser.createdAt
+        }
+        console.log("User Registered Successfully!")
+        return res.status(201).json({
+            message:"User Registered Successfully!",
+            response
+        })
+   
+    }catch(error){
+        console.log("Error:Internal Server Error!", error)
+        return res.status(500).json({
+            message:"Internal Server Error!",
+            error
+        })
+    }
+}
+
+
+
+interface Iupdate {
+    name?:string,
+    contactNumber?:string,
+    age?:number,
+    companyDetails?:{
+        companyName?:string,
+        address?:string,
+        gstin?:string
+    }
+}
+
+export async function UpdateUser(req:Request, res:Response){
+    try{
+        const userId = req.params.id
+        const data: Iupdate = req.body
+        if(data.companyDetails && data.companyDetails.gstin){
+            const gstinVerificationResult = await verifyGstin(data.companyDetails.gstin)
+            if(gstinVerificationResult.flag !== "true"){
+                console.log("Invalid GSTIN provided.")
+                return res.status(400).json({ message: "Invalid GSTIN provided." });
+            }
+        }
+
+        const userExists = await User.findById(userId)
+        if(!userExists){
+            console.log("User Not Found!") 
+            return res.status(404).json({
+                message:"User Not Found!"
+            })
+        }   
+        if(userExists.role !== "user"){
+            console.log("This endpoint is only for users with role 'user'.")
+            return res.status(403).json({
+                message:"This endpoint is only for users wiOnly users with role 'user' can update user details.th role 'user'."
+            })
+        }
+
+        const user = await UserDetails.findOneAndUpdate(
+            { userId: userId },
+            {$set: data},
+            {new:true, runValidators:true, upsert:true}
+        )
+
+        console.log("User Details Updated Successfully!")
+        return res.status(200).json({
+            message:"User Details Updated Successfully!",
+            user:user
+        })
+
+    }catch(error){
+        console.log(error)
+        return res.status(500).json({
+            message:"Internal Server Error!",
+            error
+        })
+    }
+}
+</file>
+
+<file path="src/controllers/user/shipment.ts">
+import { Request, Response } from "express";
+import { nanoid } from "nanoid";
+import { Shipment } from "../../models/shipmentModel";
+
+export async function BookShipments(req: Request, res: Response) {
+    try{
+        const user = req.user;
+        const {
+            pickupLocation: {
+                longitude: pickupLongitude,
+                latitude: pickupLatitude
+            },
+            deliveryLocation: {
+                longitude: deliveryLongitude,
+                latitude: deliveryLatitude
+            },
+            size: {
+                length,
+                width,
+                height
+            },
+            quantity,
+            weight,
+            netWeight,
+            price
+        } = req.body;
+
+        if (!pickupLongitude ||
+            !pickupLatitude || 
+            !deliveryLongitude || 
+            !deliveryLatitude || 
+            !length || 
+            !width || 
+            !height || 
+            !quantity || 
+            !weight || 
+            !netWeight || 
+            !price) {
+            console.log("All fields are required!");
+            return res.status(400).json({ message: "All fields are required!" });
+        }
+
+        const shipmentId = `FFR+${nanoid(5)}`;
+        const newShipment = new Shipment({
+            shipmentId,
+            userId: user?._id,
+            pickupLocation: {
+                longitude: pickupLongitude,
+                latitude: pickupLatitude
+            },
+            deliveryLocation: {
+                longitude: deliveryLongitude,
+                latitude: deliveryLatitude
+            },
+            size: {
+                length,
+                width,
+                height
+            },
+            quantity,
+            weight,
+            netWeight,
+            price,
+            status: "booked"
+        })
+        await newShipment.save();
+        console.log("Shipment booked successfully!");
+        return res.status(201).json({
+            message: "Shipment booked successfully!",
+            shipment: newShipment
+        });
+    }catch(error){
+        console.log("Error:Internal Server Error!", error)
+        return res.status(500).json({
+            message:"Internal Server Error!",
+            error
+        })
+    }
+}
+
+
+export async function GetShipments(req: Request, res: Response) {
+    try{
+        const user = req.user;
+        const {shipmentId} = req.params;
+        if (!shipmentId) {
+            console.log("Shipment ID is required!");
+            return res.status(400).json({ message: "Shipment ID is required!" });
+        }
+        const shipment = await Shipment.findOne({shipmentId, userId: user?._id});
+        if(!shipment){
+            console.log("Shipment not found!");
+            return res.status(404).json({ message: "Shipment not found!" });
+        }
+        
+        return res.status(200).json({
+            message: "Shipment fetched!",
+            shipment: shipment 
+        });
+        
+    }catch(error){
+        console.log("Error:Internal Server Error!", error)
+        return res.status(500).json({
+            message:"Internal Server Error!",
+            error
+        })
+    }
+}
+</file>
+
+<file path="src/controllers/authController.ts">
+import { Request, Response } from "express";
+import bcrypt from "bcrypt"
+import { sign, verify } from "jsonwebtoken";
+
+import { config } from "../utils/envConfig"
+import User from "../models/userModel";
+
+const JWT_SECRET = config.JWT_SECRET;
+
+interface Ilogin {
+    email:string,
+    password:string
+}
+export async function Login(req:Request, res:Response){
+    try{
+        const {email, password}: Ilogin = req.body
+        if(!email || !password){
+            console.log("All fields are Required!")
+            return res.status(400).json({message:"All fields are Required!"})
+        }
+
+        const user = await User.findOne({email:email})
+        if(!user){
+            console.log("Error:User does not exist!")
+            return res.status(401).json({message:"Invalid Email or Password!"})
+        }
+        
+        const passwordMatch = await bcrypt.compare(password, user.pwdhash)
+        if(!passwordMatch){const JWT_SECRET = config.JWT_SECRET;
+            console.log("Invalid Credentials!")
+            return res.status(401).json({message:"Invalid Email or Password!"})
+        }
+
+        const token = sign({email:user.email, role:user.role, id:user._id},JWT_SECRET,{expiresIn: "1h"})
+        if(verify(token, JWT_SECRET))
+            console.log("Token Verified Successfully")
+
+        console.log("User Logged In Successfully!")
+        return res.status(200).json({
+            message:"User Logged In Successfully!",
+             token 
+        });
+    }catch(error){
+        console.log("Error:Internal Server Error!", error)
+        return res.status(500).json({
+            message:"Internal Server Error!",
+            error
+        })
+    }
+}
+</file>
+
+<file path="src/db/dbConnect.ts">
+import mongoose from 'mongoose'
+import { config } from "../utils/envConfig"
+ 
+export async function dbConnect(){
+    mongoose.connect(config.MONGO_URI || '').then(() =>{
+        console.log("Connected to MongoDB")
+    }).catch((err) => {
+        console.error("Error connecting to MongoDB:", err)
+    })
+}
+</file>
+
+<file path="src/middlewares/authenticationMiddleware.ts">
+import { verify } from "jsonwebtoken"
+import { NextFunction, Request, Response } from "express"
+
+import { config } from "../utils/envConfig"
+import User from "../models/userModel"
+
+const JWT_SECRET = config.JWT_SECRET
+
+export async function Authenticate(req:Request, res:Response, next:NextFunction){
+    const header = req.headers.authorization
+    if(!header){
+        console.log("Error:Authorization header missing!")
+        return res.status(401).json({message:"Authorization header missing!"})
+    }
+    
+    const token = header.split(" ")[1]
+    if(!token){
+        console.log("Error:Token missing!")
+        return res.status(401).json({message:"Token missing!"})
+    }
+
+    try{
+        const decoded = verify(token, JWT_SECRET!) as {id:string, role:string}
+        const user = await User.findById(decoded.id).select("-pwdhash")
+        req.user = user
+        next()
+    }catch(error){
+        console.log("Error:Invalid Token!", error)
+        return res.status(401).json({message:"Invalid Token!"})
+    }
+}
+</file>
+
+<file path="src/middlewares/authorizationMiddleware.ts">
+import { NextFunction, Request, Response } from "express"
+
+import User from "../models/userModel"
+
+export function Authorize(Role:string[]){
+    return async function(req:Request, res:Response, next:NextFunction){
+        try{
+            const user = req.user
+            const dbuser = await User.findById(user.id);
+
+            if (!dbuser) {
+                return res.status(401).json({ message: "User not found" })
+            }
+            if(!Role.includes(dbuser?.role)){
+                console.log("Error:Unauthorized Access!")
+                return res.status(403).json({message:"Unauthorized Access!"})
+            }
+            next()
+
+        }catch(error){
+            console.log("Error:Unauthorized", error)
+            return res.status(403).json({message:"Unauthorized!"})
+        }
+    }
+}
+</file>
+
+<file path="src/models/detailsModel.ts">
+import mongoose from "mongoose"
+
+const userDetailsSchema = new mongoose.Schema({
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "USER",
+        required: true,
+        unique: true
+    },
+    contactNumber: {
+        type: String
+    },
+    age: {
+        type: Number
+    },
+    companyDetails: {
+        companyName: {
+            type: String
+        },
+        gstin: {
+            type: String
+        },
+        address: {
+            type: String
+        }
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+})
+
+const UserDetails = mongoose.model("USER_DETAILS", userDetailsSchema)
+
+const logisticDetailsSchema = new mongoose.Schema({
+
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "USER",
+        required: true,
+        unique: true
+    },
+    name: {
+        type: String
+    },
+    companyName: {
+        type: String
+    },
+
+    gstin: {
+        type: String
+    },
+
+    address: {
+        type: String
+    },
+
+    drivers: [{
+        name: {
+            type: String
+        },
+        licenseNumber: {
+            type: String,
+            unique: true
+        },
+        contactNumber: {
+            type: Number
+        }
+    }],
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+})
+
+const LogisticDetails = mongoose.model("LOGISTIC_DETAILS", logisticDetailsSchema)
+
+const adminDetailsSchema = new mongoose.Schema({
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "USER",
+        required: true,
+        unique: true
+    },
+    name: {
+        type: String
+    },
+    contactNumber: {
+        type: String
+    },
+    age:{
+        type: Number
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+})
+
+const AdminDetails = mongoose.model("ADMIN_DETAILS", adminDetailsSchema)
+
+export {
+    UserDetails,
+    LogisticDetails,
+    AdminDetails
+}
+</file>
+
+<file path="src/models/shipmentModel.ts">
+import mongoose from "mongoose"
+
+const shipmentSchema = new mongoose.Schema({
+    userId:{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "USER",
+        required: true
+    },
+    shipmentId:{
+        type: String,
+        required: true,
+        unique: true,
+        
+    },
+    pickupLocation:{
+        longitude:{
+            type: Number,
+            required: true
+        },
+        latitude:{
+            type: Number,
+            required: true
+        }
+    },
+    deliveryLocation:{
+        longitude:{
+            type: Number,
+            required: true
+        },
+        latitude:{
+            type: Number,
+            required: true
+        }
+    },
+    size:{
+        length:{
+            type: Number,
+            required: true
+        },
+        width:{
+            type: Number,
+            required: true
+        },
+        height:{
+            type: Number,
+            required: true
+        }
+    },
+    quantity:{
+        type: Number,
+        required: true
+    },
+    weight:{
+        type: Number,
+        required: true
+    },
+    netWeight:{
+        type: Number,
+        required: true
+    },
+    status:{
+        type: String,
+        enum: ["pending", "booked", "in-transit", "delivered", "cancelled"],
+        default: "pending"
+    },
+    price:{
+        type: Number,
+        required: true
+    },
+    createdAt:{
+        type: Date,
+        default: Date.now
+    }
+})
+
+const Shipment = mongoose.model("SHIPMENT", shipmentSchema)
+export { Shipment }
+</file>
+
+<file path="src/models/userModel.ts">
+import { timeStamp } from "console"
+import mongoose from "mongoose"
+
+const userSchema = new mongoose.Schema({
+    name: {
+        type: String,
+        required: true
+    },
+    email: {
+        type: String,
+        required: true,
+        lowercase: true,
+        unique: true
+    },
+    pwdhash:{
+        type:String,
+        required:true
+    },
+    role:{
+        type:String,
+        required:true,
+        enum:["user","admin","logistic"],
+        default:"user"
+    },
+    createdAt:{
+        type:Date,
+        default: Date.now
+    }
+})
+
+const User = mongoose.model("USER",userSchema)
+export default User
+</file>
+
+<file path="src/routes/admin/authRoute.ts">
+import { Router } from "express"
+
+import { Authenticate } from "../../middlewares/authenticationMiddleware"
+import { Authorize } from "../../middlewares/authorizationMiddleware"
+import { AdminRegister, UpdateUser } from "../../controllers/admin/authController"
+
+const router = Router()
+
+router.post('/register', AdminRegister)
+router.patch('/update/:id', Authenticate, Authorize(["admin"]), UpdateUser)
+
+export default router
+</file>
+
+<file path="src/routes/logistics/authRoute.ts">
+import { Router } from "express"
+
+import { Authenticate } from "../../middlewares/authenticationMiddleware"
+import { Authorize } from "../../middlewares/authorizationMiddleware"
+import { LogisticRegister, UpdateUser } from "../../controllers/logistics/authController"
+
+const router = Router()
+
+router.post('/register', LogisticRegister)
+router.patch('/update/:id', Authenticate, Authorize(["logistic"]), UpdateUser)
+
+export default router
+</file>
+
+<file path="src/routes/user/authRoute.ts">
+import { Router } from "express"
+
+import { Authenticate } from "../../middlewares/authenticationMiddleware"
+import { Authorize } from "../../middlewares/authorizationMiddleware"
+import { UserRegister, UpdateUser } from "../../controllers/user/authController"
+
+const router = Router()
+
+router.post('/register', UserRegister)
+router.patch('/update/:id', Authenticate, Authorize(["user"]), UpdateUser)
+export default router
+</file>
+
+<file path="src/routes/user/shipmentRoute.ts">
+import { Router } from "express"
+
+import { Authenticate } from "../../middlewares/authenticationMiddleware"
+import { Authorize } from "../../middlewares/authorizationMiddleware"
+import { BookShipments, GetShipments } from "../../controllers/user/shipment"
+
+const router = Router()
+
+router.post('/order/book', Authenticate, Authorize(["user"]), BookShipments)
+router.get('/order/get/:shipmentId', Authenticate, Authorize(["user"]), GetShipments)
+
+export default router
+</file>
+
+<file path="src/routes/connector.ts">
+import { Router } from "express"
+
+import userRoutes from "./user/authRoute"
+import adminRoutes from "./admin/authRoute"
+import logisticRoutes from "./logistics/authRoute"
+import shipment from "./user/shipmentRoute"
+import { Login }  from "../controllers/authController"
+const  router = Router()
+
+router.use('/login', Login)
+router.use('/user', userRoutes)
+router.use('/admin', adminRoutes)
+router.use('/logistic', logisticRoutes)
+router.use('/user', shipment)
+
+export default router;
+</file>
+
+<file path="src/services/gstinService.ts">
+import axios from 'axios';
+import { config } from "../utils/envConfig"
+
+const apiKey = config.GSTIN_VERIFY_API_KEY;
+
+export async function verifyGstin(gstin:string) {
+    try {
+        if (!gstin) {
+            console.log("GSTIN is required!");
+            return { message: "GSTIN is required!", flag: "false" };
+        }
+        const response = await axios.get(`http://sheet.gstincheck.co.in/check/${apiKey}/${gstin}`)
+
+        if (response.data.flag == true) {
+            console.log(`GSTIN ${gstin} is valid.`);
+            return {
+                message: "GSTIN is valid",
+                flag: "true",
+                data: response.data
+            };
+        } else {
+            console.log(`GSTIN ${gstin} is invalid.`);
+            return {
+                message:"Invalid GSTIN",
+                data: response.data 
+            };
+        }
+    } catch (error) {
+        console.log("Error verifying GSTIN:", error);
+        return ({
+            message: "Error verifying GSTIN.",
+            error: error instanceof Error ? error.message : error
+        });
+    }
+}
+</file>
+
+<file path="src/utils/envConfig.ts">
+import dotenv from 'dotenv';
+
+if (dotenv.config().error) {
+  console.error("Error loading .env file");
+  throw new Error("Error loading .env file");
+}
+
+if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET missing");
+if (!process.env.MONGO_URI) throw new Error("MONGO_URI missing");
+if (!process.env.GSTIN_VERIFY_API_KEY) throw new Error("GSTIN key missing");
+
+export const config = {
+  PORT: process.env.PORT || 3000,
+  MONGO_URI: process.env.MONGO_URI,
+  JWT_SECRET: process.env.JWT_SECRET || 'asldkjfasljkf3983433',
+  GSTIN_VERIFY_API_KEY: process.env.GSTIN_VERIFY_API_KEY,
+};
+</file>
+
+<file path="src/index.ts">
+import express from "express"
+import cors from "cors"
+import helmet from "helmet"
+
+import { config } from "./utils/envConfig"
+import { dbConnect } from "./db/dbConnect"
+import routerv1 from "./routes/connector"
+
+const app = express()
+
+const PORT = config.PORT
+
+dbConnect()
+
+app.use(cors())
+
+app.use(helmet())
+
+app.use(express.json())
+
+app.use('/api/v1', routerv1)
+
+app.get('/', (req, res)=>{res.send('Health Check Passed')})  
+
+app.listen(PORT, ()=>{
+    console.log(`Server is running on port ${PORT}`)
+})
+</file>
+
+<file path="package.json">
+{
+  "name": "fastfare-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "npx tsx watch ./src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^24.7.0",
+    "axios": "^1.13.2",
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "http-status-codes": "^2.3.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.19.1",
+    "morgan": "^1.10.1",
+    "nanoid": "^5.1.6",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/cookie-parser": "^1.4.9",
+    "@types/morgan": "^1.9.10"
+  }
+}
+</file>
+
+<file path="tsconfig.json">
+{
+  "compilerOptions": {
+    /* Visit https://aka.ms/tsconfig to read more about this file */
+
+    /* Projects */
+    // "incremental": true,                              /* Save .tsbuildinfo files to allow for incremental compilation of projects. */
+    // "composite": true,                                /* Enable constraints that allow a TypeScript project to be used with project references. */
+    // "tsBuildInfoFile": "./.tsbuildinfo",              /* Specify the path to .tsbuildinfo incremental compilation file. */
+    // "disableSourceOfProjectReferenceRedirect": true,  /* Disable preferring source files instead of declaration files when referencing composite projects. */
+    // "disableSolutionSearching": true,                 /* Opt a project out of multi-project reference checking when editing. */
+    // "disableReferencedProjectLoad": true,             /* Reduce the number of projects loaded automatically by TypeScript. */
+
+    /* Language and Environment */
+    "target": "es2016" /* Set the JavaScript language version for emitted JavaScript and include compatible library declarations. */,
+    // "lib": [],                                        /* Specify a set of bundled library declaration files that describe the target runtime environment. */
+    "jsx": "react-jsx",                                /* Specify what JSX code is generated. */
+    // "experimentalDecorators": true,                   /* Enable experimental support for legacy experimental decorators. */
+    // "emitDecoratorMetadata": true,                    /* Emit design-type metadata for decorated declarations in source files. */
+    // "jsxFactory": "",                                 /* Specify the JSX factory function used when targeting React JSX emit, e.g. 'React.createElement' or 'h'. */
+    // "jsxFragmentFactory": "",                         /* Specify the JSX Fragment reference used for fragments when targeting React JSX emit e.g. 'React.Fragment' or 'Fragment'. */
+    // "jsxImportSource": "",                            /* Specify module specifier used to import the JSX factory functions when using 'jsx: react-jsx*'. */
+    // "reactNamespace": "",                             /* Specify the object invoked for 'createElement'. This only applies when targeting 'react' JSX emit. */
+    // "noLib": true,                                    /* Disable including any library files, including the default lib.d.ts. */
+    // "useDefineForClassFields": true,                  /* Emit ECMAScript-standard-compliant class fields. */
+    // "moduleDetection": "auto",                        /* Control what method is used to detect module-format JS files. */
+
+    /* Modules */
+    "module": "commonjs" /* Specify what module code is generated. */,
+    "rootDir": "./src" /* Specify the root folder within your source files. */,
+    // "moduleResolution": "node10",                     /* Specify how TypeScript looks up a file from a given module specifier. */
+    // "baseUrl": "./",                                  /* Specify the base directory to resolve non-relative module names. */
+    // "paths": {},                                      /* Specify a set of entries that re-map imports to additional lookup locations. */
+    // "rootDirs": [],                                   /* Allow multiple folders to be treated as one when resolving modules. */
+    // "typeRoots": [],                                  /* Specify multiple folders that act like './node_modules/@types'. */
+    // "types": [],                                      /* Specify type package names to be included without being referenced in a source file. */
+    // "allowUmdGlobalAccess": true,                     /* Allow accessing UMD globals from modules. */
+    // "moduleSuffixes": [],                             /* List of file name suffixes to search when resolving a module. */
+    // "allowImportingTsExtensions": true,               /* Allow imports to include TypeScript file extensions. Requires '--moduleResolution bundler' and either '--noEmit' or '--emitDeclarationOnly' to be set. */
+    // "rewriteRelativeImportExtensions": true,          /* Rewrite '.ts', '.tsx', '.mts', and '.cts' file extensions in relative import paths to their JavaScript equivalent in output files. */
+    // "resolvePackageJsonExports": true,                /* Use the package.json 'exports' field when resolving package imports. */
+    // "resolvePackageJsonImports": true,                /* Use the package.json 'imports' field when resolving imports. */
+    // "customConditions": [],                           /* Conditions to set in addition to the resolver-specific defaults when resolving imports. */
+    // "noUncheckedSideEffectImports": true,             /* Check side effect imports. */
+    // "resolveJsonModule": true,                        /* Enable importing .json files. */
+    // "allowArbitraryExtensions": true,                 /* Enable importing files with any extension, provided a declaration file is present. */
+    // "noResolve": true,                                /* Disallow 'import's, 'require's or '<reference>'s from expanding the number of files TypeScript should add to a project. */
+
+    /* JavaScript Support */
+    // "allowJs": true,                                  /* Allow JavaScript files to be a part of your program. Use the 'checkJS' option to get errors from these files. */
+    // "checkJs": true,                                  /* Enable error reporting in type-checked JavaScript files. */
+    // "maxNodeModuleJsDepth": 1,                        /* Specify the maximum folder depth used for checking JavaScript files from 'node_modules'. Only applicable with 'allowJs'. */
+
+    /* Emit */
+    // "declaration": true,                              /* Generate .d.ts files from TypeScript and JavaScript files in your project. */
+    // "declarationMap": true,                           /* Create sourcemaps for d.ts files. */
+    // "emitDeclarationOnly": true,                      /* Only output d.ts files and not JavaScript files. */
+    // "sourceMap": true,                                /* Create source map files for emitted JavaScript files. */
+    // "inlineSourceMap": true,                          /* Include sourcemap files inside the emitted JavaScript. */
+    // "noEmit": true,                                   /* Disable emitting files from a compilation. */
+    // "outFile": "./",                                  /* Specify a file that bundles all outputs into one JavaScript file. If 'declaration' is true, also designates a file that bundles all .d.ts output. */
+    "outDir": "./dist" /* Specify an output folder for all emitted files. */,
+    // "removeComments": true,                           /* Disable emitting comments. */
+    // "importHelpers": true,                            /* Allow importing helper functions from tslib once per project, instead of including them per-file. */
+    // "downlevelIteration": true,                       /* Emit more compliant, but verbose and less performant JavaScript for iteration. */
+    // "sourceRoot": "",                                 /* Specify the root path for debuggers to find the reference source code. */
+    // "mapRoot": "",                                    /* Specify the location where debugger should locate map files instead of generated locations. */
+    // "inlineSources": true,                            /* Include source code in the sourcemaps inside the emitted JavaScript. */
+    // "emitBOM": true,                                  /* Emit a UTF-8 Byte Order Mark (BOM) in the beginning of output files. */
+    // "newLine": "crlf",                                /* Set the newline character for emitting files. */
+    // "stripInternal": true,                            /* Disable emitting declarations that have '@internal' in their JSDoc comments. */
+    // "noEmitHelpers": true,                            /* Disable generating custom helper functions like '__extends' in compiled output. */
+    // "noEmitOnError": true,                            /* Disable emitting files if any type checking errors are reported. */
+    // "preserveConstEnums": true,                       /* Disable erasing 'const enum' declarations in generated code. */
+    // "declarationDir": "./",                           /* Specify the output directory for generated declaration files. */
+
+    /* Interop Constraints */
+    // "isolatedModules": true,                          /* Ensure that each file can be safely transpiled without relying on other imports. */
+    // "verbatimModuleSyntax": true,                     /* Do not transform or elide any imports or exports not marked as type-only, ensuring they are written in the output file's format based on the 'module' setting. */
+    // "isolatedDeclarations": true,                     /* Require sufficient annotation on exports so other tools can trivially generate declaration files. */
+    // "allowSyntheticDefaultImports": true,             /* Allow 'import x from y' when a module doesn't have a default export. */
+    "esModuleInterop": true /* Emit additional JavaScript to ease support for importing CommonJS modules. This enables 'allowSyntheticDefaultImports' for type compatibility. */,
+    // "preserveSymlinks": true,                         /* Disable resolving symlinks to their realpath. This correlates to the same flag in node. */
+    "forceConsistentCasingInFileNames": true /* Ensure that casing is correct in imports. */,
+
+    /* Type Checking */
+    "strict": true /* Enable all strict type-checking options. */,
+    // "noImplicitAny": true,                            /* Enable error reporting for expressions and declarations with an implied 'any' type. */
+    // "strictNullChecks": true,                         /* When type checking, take into account 'null' and 'undefined'. */
+    // "strictFunctionTypes": true,                      /* When assigning functions, check to ensure parameters and the return values are subtype-compatible. */
+    // "strictBindCallApply": true,                      /* Check that the arguments for 'bind', 'call', and 'apply' methods match the original function. */
+    // "strictPropertyInitialization": true,             /* Check for class properties that are declared but not set in the constructor. */
+    // "strictBuiltinIteratorReturn": true,              /* Built-in iterators are instantiated with a 'TReturn' type of 'undefined' instead of 'any'. */
+    // "noImplicitThis": true,                           /* Enable error reporting when 'this' is given the type 'any'. */
+    // "useUnknownInCatchVariables": true,               /* Default catch clause variables as 'unknown' instead of 'any'. */
+    // "alwaysStrict": true,                             /* Ensure 'use strict' is always emitted. */
+    // "noUnusedLocals": true,                           /* Enable error reporting when local variables aren't read. */
+    // "noUnusedParameters": true,                       /* Raise an error when a function parameter isn't read. */
+    // "exactOptionalPropertyTypes": true,               /* Interpret optional property types as written, rather than adding 'undefined'. */
+    // "noImplicitReturns": true,                        /* Enable error reporting for codepaths that do not explicitly return in a function. */
+    // "noFallthroughCasesInSwitch": true,               /* Enable error reporting for fallthrough cases in switch statements. */
+    // "noUncheckedIndexedAccess": true,                 /* Add 'undefined' to a type when accessed using an index. */
+    // "noImplicitOverride": true,                       /* Ensure overriding members in derived classes are marked with an override modifier. */
+    // "noPropertyAccessFromIndexSignature": true,       /* Enforces using indexed accessors for keys declared using an indexed type. */
+    // "allowUnusedLabels": true,                        /* Disable error reporting for unused labels. */
+    // "allowUnreachableCode": true,                     /* Disable error reporting for unreachable code. */
+
+    /* Completeness */
+    // "skipDefaultLibCheck": true,                      /* Skip type checking .d.ts files that are included with TypeScript. */
+    "skipLibCheck": true /* Skip type checking all .d.ts files. */
+  }
+}
+</file>
+
+<file path="types.d.ts">
+import { Request } from "express";
+import { AdminModel } from "./src/models/adminModel";
+import { UserModel } from "./src/models/userModel";
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: UserModel;
+      admin?: AdminModel;
+    }
+  }
+}
+</file>
+
+</files>
