@@ -1,3 +1,4 @@
+
 import { Request, Response } from "express";
 import nodemailer from "nodemailer";
 import crypto from "crypto";
@@ -116,6 +117,47 @@ export async function getDrivers(req: Request, res: Response) {
         const drivers = await DriverDetails.find({ logisticClientId: req.user?._id });
         console.log("Drivers fetched successfully!");
         return res.status(200).json({ message: "Drivers fetched successfully!", drivers });
+    } catch (error) {
+        console.log("Error: Internal Server Error!", error);
+        return res.status(500).json({ message: "Internal Server Error!" });
+    }
+}
+
+export async function setLocation(req: Request, res: Response) {
+    try {
+        const { userId, latitude, longitude } = req.body;
+
+        if (!userId || latitude === undefined || longitude === undefined) {
+            console.log("Driver ID, Latitude and Longitude are required!");
+            return res.status(400).json({ message: "Driver ID, Latitude and Longitude are required!" });
+        }
+
+        const driver = await DriverDetails.findOneAndUpdate({ userId: userId },
+            { latitude, longitude, updatedAt: new Date() },
+            { new: true }
+        );
+        if (!driver) {
+            console.log("Driver not found!");
+            return res.status(404).json({ message: "Driver not found!" });
+        }
+
+        console.log("Driver location updated successfully!");
+        return res.status(200).json({ message: "Driver location updated successfully!", driver });
+    } catch (error) {
+        console.log("Error: Internal Server Error!", error);
+        return res.status(500).json({ message: "Internal Server Error!" });
+    }
+}
+
+
+
+export async function getDriverLocation(req: Request, res: Response) {
+    try {
+        const drivers = await DriverDetails.find({ userId: req.user?._id },
+            { Latitude: 1, Longitude: 1 }
+        );
+        console.log("Driver locations fetched successfully!");
+        return res.status(200).json({ message: "Driver locations fetched successfully!", drivers });
     } catch (error) {
         console.log("Error: Internal Server Error!", error);
         return res.status(500).json({ message: "Internal Server Error!" });

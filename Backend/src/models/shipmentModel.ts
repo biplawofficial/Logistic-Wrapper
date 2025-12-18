@@ -1,4 +1,3 @@
-import e from "express"
 import mongoose from "mongoose"
 
 const shipmentSchema = new mongoose.Schema({

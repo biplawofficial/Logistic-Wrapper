@@ -107,6 +107,14 @@ const driverDetailsSchema = new mongoose.Schema({
         required: true,
         unique: true
     },
+    latitude:{
+        type: Number,
+        default: null
+    },
+    longitude:{
+        type: Number,
+        default: null
+    },
     contactNumber: {
         type: Number,
         required: true,
@@ -137,6 +145,10 @@ const driverDetailsSchema = new mongoose.Schema({
         default: 0
     },
     createdAt: {
+        type: Date,
+        default: Date.now
+    },
+    updatedAt:{
         type: Date,
         default: Date.now
     }

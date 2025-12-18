@@ -2,7 +2,7 @@ import { Router } from "express"
 
 import userRoutes from "./user/authRoute"
 import adminRoutes from "./admin/authRoute"
-import logisticRoutes from "./logistics/authRoute"
+import logisticRoutes from "./logistics/Routes"
 import shipment from "./user/shipmentRoute"
 import { Login }  from "../controllers/authController"
 import { fetchUserDetail } from "../controllers/authController"
