@@ -58,7 +58,12 @@ src/
     ```
 
 3.  Configure environment variables:
-    Create a `.env` file in the root directory (refer to `src/utils/envConfig.ts` for required keys, typically `PORT`, `MONGO_URI`, `JWT_SECRET`).
+    Create a `.env` file in the root directory (refer to `src/utils/envConfig.ts` for required keys, typically PORT=3000
+MONGO_URI="mongodb+srv://......."
+JWT_SECRET=""
+GSTIN_VERIFY_API_KEY=""
+GMAIL_API=""
+EMAIL_ID="").
 
 ### Running the Project
 
