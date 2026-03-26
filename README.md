@@ -1,4 +1,4 @@
-# FastFare Backend
+# Logistic Wrapper Backend
 
 FastFare is a logistics and shipment management platform connecting users, drivers, and logistics providers. This backend service handles authentication, shipment booking, real-time driver tracking, and data management.
 
